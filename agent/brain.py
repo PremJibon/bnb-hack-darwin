@@ -79,10 +79,8 @@ def call_msaf1_brain(market_data: Dict[str, Any], state: Dict[str, Any]) -> Dict
         from groq import Groq
         client = Groq(api_key=groq_key)
 
-        hours_since_trade = 0
         last_trade_ts = state.get("last_trade_ts", 0)
-        if last_trade_ts:
-            hours_since_trade = (os.times() if False else (time.time() - last_trade_ts) / 3600)
+        hours_since_trade = (time.time() - last_trade_ts) / 3600 if last_trade_ts else 0
 
         user_message = f"""
 CURRENT MEMPOOL & MARKET CONDITIONS:

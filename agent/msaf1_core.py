@@ -241,8 +241,7 @@ class MSAF1Engine:
         if tier == "LEVEL_1":
             return "Turbulence detected. Reducing exposure. The Sandman tightens his grip."
 
-        if action == "ARBITRAGE_SWAP":
-            return f"Dislocation of {telemetry.get('detected_dislocation_pct', 0)*100:.1f}% detected. Exploiting block-space friction before the herd arrives."
+        if action == "ARBITRAGE_SWAP":                    return f"Dislocation of {telemetry.get('detected_dislocation_pct', 0):.1f}% detected. Exploiting block-space friction before the herd arrives."
         if action == "HEARTBEAT":
             return "Silent waters. Executing heartbeat wash to stay operational. The mempool will speak soon."
 

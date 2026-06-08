@@ -54,7 +54,7 @@ export function ArbitrageScanner({ opportunities, telemetry }: Props) {
             <span className="arb-gauge-label">Mempool Dislocation</span>
             <span className="arb-gauge-value" style={{ color: dislocationColor }}>
               {telemetry.detected_dislocation_pct > 0
-                ? `${(telemetry.detected_dislocation_pct * 100).toFixed(1)}%`
+                ? `${telemetry.detected_dislocation_pct.toFixed(1)}%`
                 : "0.0%"}
             </span>
           </div>
