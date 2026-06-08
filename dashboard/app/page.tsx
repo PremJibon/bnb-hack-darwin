@@ -1,57 +1,68 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { GeneLeaderboard } from "./components/GeneLeaderboard";
 import { DrawdownMeter } from "./components/DrawdownMeter";
 import { TradeLog } from "./components/TradeLog";
 import { DarwinThought } from "./components/DarwinThought";
+import { PortfolioChart } from "./components/PortfolioChart";
+import { GeneEvolutionChart } from "./components/GeneEvolutionChart";
+import { MarketOverview } from "./components/MarketOverview";
+import { LoadingSkeleton } from "./components/LoadingSkeleton";
 
 interface DarwinState {
   portfolio_usd: number;
   portfolio_peak_usd: number;
+  portfolio_start_of_day_usd: number;
+  portfolio_history?: number[];
   current_drawdown_pct: number;
-  open_positions: string[];
+  open_positions: any[];
   total_trades: number;
   generation: number;
   gene_scores: Record<string, number>;
+  gene_scores_history?: Array<{ timestamp: string; scores: Record<string, number> }>;
   genes: Record<string, any>;
-  last_decision: {
-    decision: string;
-    token: string;
-    gene: string;
-    confidence: number;
-    reasoning: string;
-    darwin_thought: string;
-    timestamp: string;
-  } | null;
+  market_snapshot?: any;
+  last_decision: any;
   trade_log: any[];
   last_tick: string;
   evolution_history: any[];
 }
 
 const GIST_ID = process.env.NEXT_PUBLIC_GIST_ID || "";
+const REFRESH_INTERVAL = 30_000; // 30 seconds
 
 function formatTime(iso: string) {
   if (!iso) return "\u2014";
-  return new Date(iso).toLocaleString();
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function timeAgo(iso: string): string {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 export default function Dashboard() {
   const [state, setState] = useState<DarwinState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [countdown, setCountdown] = useState(REFRESH_INTERVAL / 1000);
 
-  async function fetchState() {
+  const fetchState = useCallback(async () => {
     try {
       if (!GIST_ID) {
         setError("NEXT_PUBLIC_GIST_ID not set");
         setLoading(false);
         return;
       }
-      const res = await fetch(
-        `https://api.github.com/gists/${GIST_ID}`,
-        { cache: "no-store" }
-      );
+      const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const gist = await res.json();
       const content = gist.files?.["darwin_state.json"]?.content;
@@ -61,79 +72,117 @@ export default function Dashboard() {
       setError(e.message);
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     fetchState();
-    const interval = setInterval(fetchState, 60_000);
-    return () => clearInterval(interval);
-  }, []);
+    const fetchInterval = setInterval(fetchState, REFRESH_INTERVAL);
+    const countdownInterval = setInterval(() => {
+      setCountdown((prev) => (prev <= 1 ? REFRESH_INTERVAL / 1000 : prev - 1));
+    }, 1000);
+    return () => { clearInterval(fetchInterval); clearInterval(countdownInterval); };
+  }, [fetchState]);
 
-  if (loading) {
-    return (
-      <div className="container" style={{ paddingTop: 80, textAlign: "center" }}>
-        <h1 style={{ fontSize: 24, color: "var(--text-muted)" }}>
-          Loading DARWIN state...
-        </h1>
-      </div>
-    );
-  }
+  if (loading) return <LoadingSkeleton />;
 
   if (error || !state) {
     return (
-      <div className="container" style={{ paddingTop: 80, textAlign: "center" }}>
-        <h1 style={{ fontSize: 24, color: "var(--danger)" }}>
-          Dashboard Offline
-        </h1>
-        <p style={{ color: "var(--text-muted)", marginTop: 8 }}>
-          {error || "No state data available. Set NEXT_PUBLIC_GIST_ID."}
-        </p>
+      <div className="container" style={{ paddingTop: 120, textAlign: "center" }}>
+        <div className="error-state">
+          <div className="error-icon">!</div>
+          <h2>Dashboard Offline</h2>
+          <p>{error || "No state data available."}</p>
+          <button className="btn btn-primary" onClick={fetchState}>Retry Connection</button>
+        </div>
       </div>
     );
   }
 
   const decision = state.last_decision;
+  const portfolioHistory = state.portfolio_history || [state.portfolio_usd];
+  const geneHistory = state.gene_scores_history || [];
+  const pnlPct = state.portfolio_start_of_day_usd > 0
+    ? ((state.portfolio_usd - state.portfolio_start_of_day_usd) / state.portfolio_start_of_day_usd) * 100
+    : 0;
 
   return (
     <div className="container">
-      <div className="header">
-        <div>
-          <h1>DARWIN AGENT</h1>
+      {/* Header */}
+      <header className="header">
+        <div className="header-left">
+          <div className="header-brand">
+            <span className="logo-icon">D</span>
+            <h1><span>DARWIN</span> <span className="header-sub">Agent</span></h1>
+          </div>
           <div className="header-meta">
-            <span>Gen {state.generation}</span>
-            <span>·</span>
-            <span>{state.total_trades} trades</span>
-            <span>·</span>
-            <span>Updated {formatTime(state.last_tick)}</span>
+            <span className="meta-chip">Gen #{state.generation}</span>
+            <span className="meta-chip">{state.total_trades} trades</span>
+            <span className="meta-chip">{state.open_positions.length} positions</span>
+            <span className="meta-chip live-indicator">
+              <span className="live-dot" /> LIVE
+            </span>
           </div>
         </div>
-        <button onClick={fetchState} className="btn">Refresh</button>
-      </div>
+        <div className="header-right">
+          <span className="last-updated" title={formatTime(state.last_tick)}>
+            {timeAgo(state.last_tick)}
+          </span>
+          <button className="btn btn-refresh" onClick={fetchState}>
+            <span className="refresh-icon" style={{ animation: countdown <= 3 ? "spin 1s linear" : "none" }}>&#x21bb;</span>
+            {countdown}s
+          </button>
+        </div>
+      </header>
 
-      <div className="grid grid-4" style={{ marginTop: 24 }}>
-        <div className="card">
-          <div className="card-title">Portfolio</div>
-          <div className="card-value">${state.portfolio_usd.toFixed(0)}</div>
-          <div className="card-label">Peak: ${state.portfolio_peak_usd.toFixed(0)}</div>
+      {/* Portfolio Summary Cards */}
+      <section className="stats-grid">
+        <div className="stat-card stat-portfolio">
+          <div className="stat-label">Portfolio Value</div>
+          <div className="stat-value">${state.portfolio_usd.toFixed(0)}</div>
+          <div className={`stat-change ${pnlPct >= 0 ? "up" : "down"}`}>
+            {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}% today
+          </div>
+          <div className="stat-sub">Peak: ${state.portfolio_peak_usd.toFixed(0)}</div>
         </div>
-        <div className="card">
-          <div className="card-title">Open Positions</div>
-          <div className="card-value">{state.open_positions.length}</div>
-          <div className="card-label">Max: 2</div>
+        <div className="stat-card">
+          <div className="stat-label">Drawdown</div>
+          <div className="stat-value" style={{ color: state.current_drawdown_pct > 15 ? "var(--danger)" : state.current_drawdown_pct > 8 ? "var(--warning)" : "var(--success)" }}>
+            {state.current_drawdown_pct.toFixed(1)}%
+          </div>
+          <div className="stat-sub">Max: 25% limit</div>
+          <div className="mini-bar">
+            <div className="mini-bar-fill" style={{
+              width: `${Math.min((state.current_drawdown_pct / 25) * 100, 100)}%`,
+              background: state.current_drawdown_pct > 15 ? "var(--danger)" : state.current_drawdown_pct > 8 ? "var(--warning)" : "var(--success)"
+            }} />
+          </div>
         </div>
-        <div className="card">
-          <div className="card-title">Generation</div>
-          <div className="card-value text-accent">#{state.generation}</div>
-          <div className="card-label">Evolutions triggered</div>
+        <div className="stat-card">
+          <div className="stat-label">Open Positions</div>
+          <div className="stat-value">{state.open_positions.length}/2</div>
+          <div className="stat-sub">
+            {state.open_positions.map((p: any) => p.token).join(", ") || "No open positions"}
+          </div>
         </div>
-        <div className="card">
-          <div className="card-title">Trades</div>
-          <div className="card-value text-success">{state.total_trades}</div>
-          <div className="card-label">All-time total</div>
+        <div className="stat-card">
+          <div className="stat-label">Active Gene</div>
+          <div className="stat-value" style={{ color: "var(--accent)" }}>
+            {decision?.gene || "NONE"}
+          </div>
+          <div className="stat-sub">
+            {decision?.decision || "HOLD"} · {(decision?.confidence || 0) * 100}% confidence
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-2" style={{ marginTop: 16 }}>
+      {/* Charts Row */}
+      <section className="charts-grid">
+        <PortfolioChart history={portfolioHistory} peak={state.portfolio_peak_usd} />
+        <GeneEvolutionChart history={geneHistory} />
+      </section>
+
+      {/* Middle Row: Drawdown + Thought + Market */}
+      <section className="mid-grid">
         <DrawdownMeter pct={state.current_drawdown_pct} />
         <DarwinThought
           thought={decision?.darwin_thought || ""}
@@ -141,26 +190,80 @@ export default function Dashboard() {
           confidence={decision?.confidence || 0}
           gene={decision?.gene || "NONE"}
           token={decision?.token || "\u2014"}
+          reasoning={decision?.reasoning || ""}
         />
-      </div>
+        <MarketOverview
+          market={state.market_snapshot || null}
+          openPositions={state.open_positions}
+        />
+      </section>
 
-      <div style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
-          Gene Tournament
-        </h2>
+      {/* Gene Tournament */}
+      <section className="section">
+        <div className="section-header">
+          <h2>Gene Tournament</h2>
+          <span className="section-sub">4 strategies competing · winner executes</span>
+        </div>
         <GeneLeaderboard genes={state.genes} scores={state.gene_scores} />
-      </div>
+      </section>
 
-      <div style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
-          Trade History
-        </h2>
+      {/* Trade History */}
+      <section className="section">
+        <div className="section-header">
+          <h2>Trade History</h2>
+          <span className="section-sub">Last {Math.min(state.trade_log?.length || 0, 50)} trades</span>
+        </div>
         <TradeLog trades={state.trade_log} />
-      </div>
+      </section>
 
-      <div className="footer">
-        DARWIN - Evolutionary Tournament Trading Agent · BNB HACK 2026
-      </div>
+      {/* Evolution Timeline */}
+      {state.evolution_history && state.evolution_history.length > 0 && (
+        <section className="section">
+          <div className="section-header">
+            <h2>Evolution Timeline</h2>
+            <span className="section-sub">Gene mutations over generations</span>
+          </div>
+          <div className="card">
+            <div className="evolution-timeline">
+              {state.evolution_history.slice().reverse().map((evo: any, i: number) => {
+                const winner = evo.scores ? Object.entries(evo.scores).sort(([,a]: any, [,b]: any) => b - a)[0] : null;
+                return (
+                  <div key={i} className="evo-item">
+                    <div className="evo-marker">
+                      <div className="evo-dot" />
+                      {i < state.evolution_history.length - 1 && <div className="evo-line" />}
+                    </div>
+                    <div className="evo-content">
+                      <div className="evo-gen">Generation #{evo.generation}</div>
+                      <div className="evo-time">{formatTime(evo.timestamp)}</div>
+                      <div className="evo-scores">
+                        {evo.scores && Object.entries(evo.scores).map(([gene, score]: any) => {
+                          const isWinner = winner && winner[0] === gene;
+                          return (
+                            <span key={gene} className={`evo-gene ${isWinner ? "winner" : ""}`}
+                                  style={{ borderColor: gene === "PULSE" ? "#f59e0b" : gene === "WAVE" ? "#3b82f6" : gene === "GRAVITY" ? "#10b981" : "#8b5cf6" }}>
+                              {gene}: {score.toFixed(3)}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
+
+      <footer className="footer">
+        <div>DARWIN - Evolutionary Tournament Trading Agent</div>
+        <div className="footer-links">
+          <span>BNB HACK 2026</span>
+          <span>Best Use of TWAK</span>
+          <a href="https://github.com/PremJibon/bnb-hack-darwin" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </div>
+      </footer>
     </div>
   );
 }
