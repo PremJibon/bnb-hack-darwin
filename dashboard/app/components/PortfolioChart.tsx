@@ -56,7 +56,7 @@ export function PortfolioChart({ history, labels, peak }: Props) {
             <YAxis domain={["dataMin - 10", "dataMax + 10"]} tick={{ fontSize: 10, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
             <Tooltip
               contentStyle={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-              formatter={(value: number) => [`$${value.toFixed(2)}`, "Portfolio"]}
+              formatter={(value: any) => [value != null ? `$${Number(value).toFixed(2)}` : "$0", "Portfolio"]}
             />
             <Area type="monotone" dataKey="value" stroke={isPositive ? "var(--success)" : "var(--danger)"} fillOpacity={1} fill="url(#colorPnl)" strokeWidth={2} />
           </AreaChart>

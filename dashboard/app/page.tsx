@@ -9,6 +9,8 @@ import { PortfolioChart } from "./components/PortfolioChart";
 import { GeneEvolutionChart } from "./components/GeneEvolutionChart";
 import { MarketOverview } from "./components/MarketOverview";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
+import { PriceTicker } from "./components/PriceTicker";
+import { NotificationsPanel } from "./components/NotificationsPanel";
 
 interface DarwinState {
   portfolio_usd: number;
@@ -124,6 +126,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="header-right">
+          <NotificationsPanel state={state} />
           <span className="last-updated" title={formatTime(state.last_tick)}>
             {timeAgo(state.last_tick)}
           </span>
@@ -133,6 +136,9 @@ export default function Dashboard() {
           </button>
         </div>
       </header>
+
+      {/* Live Price Ticker */}
+      <PriceTicker />
 
       {/* Portfolio Summary Cards */}
       <section className="stats-grid">
