@@ -805,6 +805,408 @@ tr:last-child td { border-bottom: none; }
   box-shadow: 0 0 4px currentColor;
 }
 
+/* ===== MSAF-1 GRID ===== */
+.msaf1-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* ===== SHIELD COMPONENT ===== */
+.shield-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.shield-metric {
+  text-align: center;
+  padding: 8px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+}
+
+.shield-metric-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  line-height: 1.2;
+}
+
+.shield-metric-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.shield-gas-gauge { margin-bottom: 8px; }
+
+.shield-gas-bar {
+  height: 6px;
+  background: var(--bg);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.shield-gas-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.shield-gas-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 8px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.shield-risk-tier {}
+
+.shield-tier-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.shield-tier-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.shield-tier-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+}
+
+.shield-tier-bar {
+  height: 6px;
+  background: var(--bg);
+  border-radius: 3px;
+  overflow: visible;
+  position: relative;
+  margin-bottom: 4px;
+}
+
+.shield-tier-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.shield-tier-markers {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.shield-tier-marker {
+  position: absolute;
+  transform: translateX(-50%);
+  top: -8px;
+}
+
+.shield-tier-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-card);
+  margin: 0 auto;
+}
+
+.shield-tier-marker-label {
+  display: block;
+  text-align: center;
+  font-size: 8px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.shield-tier-detail {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 1100px) {
+  .msaf1-grid { grid-template-columns: 1fr; }
+}
+
+/* ===== ARBITRAGE SCANNER ===== */
+.arb-gauge {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.arb-gauge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.arb-gauge-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.arb-gauge-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.arb-gauge-bar {
+  height: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  overflow: visible;
+  position: relative;
+}
+
+.arb-gauge-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.arb-gauge-threshold {
+  position: absolute;
+  top: -10px;
+  transform: translateX(-50%);
+}
+
+.arb-gauge-threshold-label {
+  font-size: 8px;
+  color: var(--warning);
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.arb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.arb-item {
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  transition: border-color var(--transition);
+}
+
+.arb-item:hover {
+  border-color: var(--border-light);
+}
+
+.arb-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.arb-item-symbol {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.arb-item-direction {
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+.arb-item-details {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.arb-item-detail {
+  text-align: center;
+}
+
+.arb-item-label {
+  display: block;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 1px;
+}
+
+.arb-item-value {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.arb-item-confidence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.arb-conf-bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.arb-conf-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.arb-conf-text {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  min-width: 30px;
+  text-align: right;
+}
+
+.arb-empty {
+  text-align: center;
+  padding: 32px 0;
+}
+
+.arb-empty-icon {
+  margin-bottom: 8px;
+  opacity: 0.3;
+}
+
+.arb-empty-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.arb-empty-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.arb-list::-webkit-scrollbar { width: 3px; }
+.arb-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ===== GAS MONITOR ===== */
+.gas-gauge-container { margin-bottom: 12px; }
+
+.gas-gauge { position: relative; }
+
+.gas-gauge-track {
+  height: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  z-index: 2;
+}
+
+.gas-gauge-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease, background 0.3s ease;
+}
+
+.gas-gauge-zones {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.gas-zone {
+  position: absolute;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gas-zone-label {
+  font-size: 8px;
+  color: var(--text-muted);
+  opacity: 0.4;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.gas-sparkline { margin-bottom: 4px; }
+
+.gas-sparkline-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 40px;
+  margin-bottom: 4px;
+}
+
+.gas-spark-bar {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  transition: height 0.3s ease;
+  min-height: 3px;
+}
+
+.gas-sparkline-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.gas-status {
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+@media (max-width: 1100px) {
+  .gas-sparkline-bars { height: 30px; }
+}
+
 /* ===== ANIMATIONS ===== */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }

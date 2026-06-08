@@ -11,6 +11,9 @@ import { MarketOverview } from "./components/MarketOverview";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { PriceTicker } from "./components/PriceTicker";
 import { NotificationsPanel } from "./components/NotificationsPanel";
+import { MEVShield } from "./components/MEVShield";
+import { ArbitrageScanner } from "./components/ArbitrageScanner";
+import { GasMonitor } from "./components/GasMonitor";
 
 interface DarwinState {
   portfolio_usd: number;
@@ -29,6 +32,40 @@ interface DarwinState {
   trade_log: any[];
   last_tick: string;
   evolution_history: any[];
+  // MSAF-1 fields
+  msaf1_telemetry?: {
+    detected_dislocation_pct: number;
+    current_calculated_drawdown: number;
+    risk_tier: string;
+    gas_gwei_avg: number;
+    mev_attacks_blocked: number;
+    total_arb_opportunities: number;
+    hours_since_last_trade: number;
+  };
+  msaf1_strategy?: {
+    action: string;
+    rationale: string;
+  };
+  msaf1_risk_tier?: string;
+  mev_attacks_blocked?: number;
+  arbitrage_opportunities?: any[];
+  shield_status?: {
+    active: boolean;
+    attacks_blocked: number;
+    gas_gwei: number;
+    gas_spike: boolean;
+    gas_critical: boolean;
+    sandwich_risk: number;
+    status: string;
+  };
+  risk_shield?: {
+    drawdown_pct: number;
+    risk_tier: string;
+    tier_label: string;
+    trade_size_mult: number;
+    emergency_exit: boolean;
+    max_trade_pct: number;
+  };
 }
 
 const GIST_ID = process.env.NEXT_PUBLIC_GIST_ID || "";
@@ -113,13 +150,25 @@ export default function Dashboard() {
       <header className="header">
         <div className="header-left">
           <div className="header-brand">
-            <span className="logo-icon">D</span>
-            <h1><span>DARWIN</span> <span className="header-sub">Agent</span></h1>
+            <span className="logo-icon" style={{background: "linear-gradient(135deg, #f87171, #a78bfa)"}}>S</span>
+            <h1><span>MSAF-1</span> <span className="header-sub">The Sandman</span></h1>
           </div>
           <div className="header-meta">
-            <span className="meta-chip">Gen #{state.generation}</span>
             <span className="meta-chip">{state.total_trades} trades</span>
             <span className="meta-chip">{state.open_positions.length} positions</span>
+            {state.shield_status && (
+              <span className={`meta-chip ${state.shield_status.gas_critical ? "badge-sell" : state.shield_status.gas_spike ? "badge-hold" : "badge-buy"}`}>
+                {state.shield_status.gas_gwei.toFixed(1)} gwei
+              </span>
+            )}
+            <span className="meta-chip" style={{
+              color: state.msaf1_risk_tier === "CRITICAL_SHIELD" ? "var(--danger)" :
+                     state.msaf1_risk_tier === "LEVEL_2" ? "var(--warning)" :
+                     state.msaf1_risk_tier === "LEVEL_1" ? "#f97316" : "var(--success)",
+              borderColor: "currentColor"
+            }}>
+              {state.msaf1_risk_tier || "NORMAL"}
+            </span>
             <span className="meta-chip live-indicator">
               <span className="live-dot" /> LIVE
             </span>
@@ -188,15 +237,34 @@ export default function Dashboard() {
       </section>
 
       {/* Middle Row: Drawdown + Thought + Market */}
+      {/* MSAF-1 Row: MEV Shield + Arbitrage Scanner + Gas Monitor */}
+      <section className="msaf1-grid">
+        <MEVShield
+          shield={state.shield_status || null}
+          drawdown={state.risk_shield || null}
+        />
+        <ArbitrageScanner
+          opportunities={state.arbitrage_opportunities || []}
+          telemetry={state.msaf1_telemetry || null}
+        />
+        <GasMonitor
+          currentGas={state.shield_status?.gas_gwei || 5}
+          gasHistory={state.msaf1_telemetry?.gas_gwei_avg ? [{gwei: state.msaf1_telemetry.gas_gwei_avg, ts: Date.now()}] : []}
+          gasSpike={state.shield_status?.gas_spike || false}
+          gasCritical={state.shield_status?.gas_critical || false}
+        />
+      </section>
+
+      {/* Middle Row: Drawdown + Thought + Market */}
       <section className="mid-grid">
         <DrawdownMeter pct={state.current_drawdown_pct} />
         <DarwinThought
           thought={decision?.darwin_thought || ""}
-          decision={decision?.decision || "HOLD"}
+          decision={state.msaf1_strategy?.action || decision?.decision || "HOLD"}
           confidence={decision?.confidence || 0}
-          gene={decision?.gene || "NONE"}
+          gene={decision?.gene || "MSAF1"}
           token={decision?.token || "\u2014"}
-          reasoning={decision?.reasoning || ""}
+          reasoning={state.msaf1_strategy?.rationale || decision?.reasoning || ""}
         />
         <MarketOverview
           market={state.market_snapshot || null}
@@ -263,7 +331,7 @@ export default function Dashboard() {
       )}
 
       <footer className="footer">
-        <div>DARWIN - Evolutionary Tournament Trading Agent</div>
+        <div>MSAF-1 — The Sandman: MEV-Shield &amp; Arbitrage-Frontrunner</div>
         <div className="footer-links">
           <span>BNB HACK 2026</span>
           <span>Best Use of TWAK</span>
