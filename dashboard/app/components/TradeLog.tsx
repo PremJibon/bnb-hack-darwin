@@ -62,7 +62,7 @@ export function TradeLog({ trades }: Props) {
                 </td>
                 <td>
                   {t.from_token && t.to_token ? (
-                    <span style={{ fontSize: 11 }}>{t.from_token} -> {t.to_token}</span>
+                    <span style={{ fontSize: 11 }}>{t.from_token} {'->'} {t.to_token}</span>
                   ) : "\u2014"}
                 </td>
                 <td style={{ fontWeight: 600 }}>
