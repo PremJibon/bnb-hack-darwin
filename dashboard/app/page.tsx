@@ -14,6 +14,7 @@ import { GeneEvolutionChart } from "./components/GeneEvolutionChart";
 import { GeneLeaderboard } from "./components/GeneLeaderboard";
 import { TradeLog } from "./components/TradeLog";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
+import { ApiKeyVault } from "./components/ApiKeyVault";
 
 interface DarwinState {
   portfolio_usd: number;
@@ -468,6 +469,9 @@ export default function Dashboard() {
         </div>
         <TradeLog trades={state.trade_log} />
       </section>
+
+      {/* ===== API KEY VAULT ===== */}
+      <ApiKeyVault />
 
       {/* ===== FOOTER ===== */}
       <footer className="footer">
