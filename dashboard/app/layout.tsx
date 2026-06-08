@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "DARWIN - Evolutionary Trading Agent",
-  description: "BNB HACK AI Trading Agent - Tournament Evolution Dashboard",
+  title: "YOLO_BOAT / MSAF-1 — MEV-Shield & Arbitrage-Frontrunner",
+  description: "Professional trading interface for The Sandman — AI-powered MEV-shielding and micro-arbitrage agent on BNB Chain",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
