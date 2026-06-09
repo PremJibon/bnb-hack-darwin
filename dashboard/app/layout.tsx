@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { MarketDataProvider } from "../lib/websocket-context";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "YOLO_BOAT / DARWIN — Professional Trading Terminal",
