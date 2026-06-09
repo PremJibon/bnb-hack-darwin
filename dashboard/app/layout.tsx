@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
+import { MarketDataProvider } from "../lib/websocket-context";
 
 export const metadata: Metadata = {
-  title: "YOLO_BOAT / MSAF-1 — MEV-Shield & Arbitrage-Frontrunner",
-  description: "Professional trading interface for The Sandman — AI-powered MEV-shielding and micro-arbitrage agent on BNB Chain",
+  title: "YOLO_BOAT / DARWIN — Professional Trading Terminal",
+  description: "Industry-grade trading terminal with real-time Binance WebSocket data, portfolio tracking, and AI-powered execution for BNB Chain.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <MarketDataProvider>
+          {children}
+        </MarketDataProvider>
+      </body>
     </html>
   );
 }

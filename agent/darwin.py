@@ -72,10 +72,23 @@ def run_tick(state: dict) -> dict:
 
     # Track consecutive losses
     last_trade = new_state.get("trade_log", [])[-1] if new_state.get("trade_log") else None
+    new_state["ticks_since_last_trade"] = new_state.get("ticks_since_last_trade", 0) + 1
     if last_trade and last_trade.get("pnl_pct", 0) < 0:
         new_state["consecutive_losses"] = new_state.get("consecutive_losses", 0) + 1
     else:
         new_state["consecutive_losses"] = 0
+
+    # Track daily trade count for hackathon minimum (1 trade/day)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if new_state.get("trade_date") != today:
+        new_state["trade_date"] = today
+        new_state["daily_trade_count"] = 0
+
+    # Reset ticks_since_last_trade if a new trade was executed
+    old_trade_count = state.get("total_trades", 0)
+    if new_state.get("total_trades", 0) > old_trade_count:
+        new_state["ticks_since_last_trade"] = 0
+        new_state["daily_trade_count"] = new_state.get("daily_trade_count", 0) + 1
 
     # Build portfolio history
     history = new_state.get("portfolio_history", [])
@@ -141,6 +154,20 @@ def main():
     print(f"   Drawdown: {state.get('current_drawdown_pct', 0):.1f}%")
     print(f"   Total trades: {state.get('total_trades', 0)}")
     print(f"   MEV attacks blocked: {state.get('mev_attacks_blocked', 0)}\n")
+
+    # Attempt competition registration (BNB HACK 2026 Track 1)
+    # Registration must be completed before June 22, 2026 trading window
+    if not state.get("competition_registered"):
+        try:
+            from agent.twak_client import TWAKExecutor
+            twak_reg = TWAKExecutor(dry_run=os.environ.get("DRY_RUN", "true").lower() == "true")
+            reg_result = twak_reg.register_for_competition()
+            state["competition_registered"] = reg_result.get("status") in ("registered", "dry_run", "already_registered")
+            state["competition_registration"] = reg_result
+            print(f"   Competition registration: {reg_result.get('status', 'unknown')}")
+        except Exception as e:
+            print(f"   Competition registration skipped: {e}")
+            state["competition_registered"] = False
 
     # Run the MSAF-1 tick
     new_state = run_tick(state)

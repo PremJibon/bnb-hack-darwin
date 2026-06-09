@@ -25,27 +25,39 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logger = logging.getLogger("msaf1")
 
-# ─── BEP-20 WHITELIST (149 tokens - curated) ──────────────────────────────
+# ─── BNB HACK 2026: EXACT 149 ELIGIBLE TOKENS ─────────────────────────
+# Source: https://dorahacks.io/hackathon/bnbhack-twt-cmc/detail
+# Trades outside this list do not count towards competition score.
 BEP20_WHITELIST = {
-    "BNB", "CAKE", "XRP", "ADA", "LINK", "DOT", "DOGE", "SOL", "MATIC",
-    "AVAX", "UNI", "AAVE", "CRV", "SUSHI", "COMP", "MKR", "SNX", "YFI",
-    "ALGO", "FIL", "NEAR", "FTM", "TRX", "VET", "THETA", "ICP", "EOS",
-    "ATOM", "XTZ", "ZIL", "EGLD", "KSM", "FLOW", "NEO", "WAVES", "ONT",
-    "IOTA", "BAT", "ZEC", "DASH", "XMR", "LTC", "BCH", "ETC", "1INCH",
-    "BAL", "LRC", "GRT", "CHZ", "ENJ", "MANA", "SAND", "AXS", "SLP",
-    "TLM", "ALICE", "RARI", "BAKE", "BURGER", "SWTH", "ALPACA", "BIFI",
-    "BELT", "FORTH", "QUICK", "DODO", "MDX", "BSCPAD", "LAUNCH", "HOOK",
-    "TWT", "SXP", "WBNB", "BUSD", "USDT", "USDC", "DAI", "BTCB", "ETH",
-    "LDO", "FXS", "APE", "GALA", "IMX", "RNDR", "FET", "AGIX", "OCEAN",
-    "CTSI", "BAND", "NMR", "DIA", "TRB", "API3", "RLC", "AR", "HNT",
-    "IOTX", "ANKR", "SKL", "CELR", "KAVA", "REN", "KNC", "ZRX", "OMG",
-    "LSK", "ARDR", "STRAT", "ARK", "GAS", "NULS", "ELF", "IOST", "WAN",
-    "TOMO", "VTHO", "HBAR", "ONE", "FLOW", "MINA", "ROSE", "CKB", "CELO",
-    "GNO", "ANT", "MLN", "UMA", "KP3R", "HEGIC", "PNT", "RBN", "ENS",
-    "C98", "DYDX", "HFT", "JOE", "SPELL", "MIM", "FXS", "ALCX", "TOKE",
-    "POLY", "HOOK", "EDU", "GMT", "GAL", "WOO", "DEXE", "ORBS", "STG",
-    "ACH", "HIGH", "RAD", "LIT", "BICO", "SUPER", "REQ", "COTI", "WMT",
+    "ETH", "USDT", "USDC", "XRP", "TRX", "DOGE", "ZEC", "ADA", "LINK",
+    "BCH", "DAI", "TON", "USD1", "USDE", "M", "LTC", "AVAX", "SHIB",
+    "XAUT", "WLFI", "H", "DOT", "UNI", "ASTER", "DEXE", "USDD", "ETC",
+    "AAVE", "ATOM", "U", "STABLE", "FIL", "INJ", "NIGHT", "FET", "TUSD",
+    "BONK", "PENGU", "CAKE", "SIREN", "LUNC", "ZRO", "KITE", "FDUSD",
+    "BEAT", "PIEVERSE", "BTT", "NFT", "EDGE", "FLOKI", "LDO", "B", "FF",
+    "PENDLE", "NEX", "STG", "AXS", "TWT", "HOME", "RAY", "COMP", "GWEI",
+    "XCN", "GENIUS", "XPL", "BAT", "SKYAI", "APE", "IP", "SFP", "TAG",
+    "NXPC", "AB", "SAHARA", "1INCH", "CHEEMS", "BANANAS31", "RIVER", "MYX",
+    "RAVE", "SNX", "FORM", "LAB", "HTX", "USDF", "CTM", "BDX", "SLX",
+    "UB", "DUCKY", "FRAX", "BILL", "WFI", "KOGE", "ALE", "FRXUSD",
+    "USDF", "GOMINING", "VCNT", "GUA", "DUSD", "SMILEK", "0G", "BEAM",
+    "MY", "SOON", "REAL", "Q", "AIOZ", "ZIG", "YFI", "TAC", "LISUSD",
+    "CYS", "ZAMA", "TRIA", "HUMA", "PLUME", "ZIL", "XPR", "ZETA",
+    "BABYDOGE", "NILA", "ROSE", "VELO", "UAI", "BRETT", "OPEN", "BSB",
+    "TOSHI", "BAS", "ACH", "AXL", "LUR", "ELF", "KAVA", "APR", "IRYS",
+    "EURI", "XUSD", "BARD", "DUSK", "SUSHI", "PEAQ", "COAI", "BDCA",
+    "XAUM",
 }
+
+# Competition contract for on-chain registration (BNB HACK 2026)
+COMPETITION_CONTRACT = "0x212c61b9b72c95d95bf29cf032f5e5635629aed5"
+
+# Risk thresholds aligned with hackathon rules:
+# - 30% drawdown = disqualification (hard cap)
+# - 25% = CRITICAL_SHIELD (5% safety buffer)
+# - 22% = LEVEL_2
+# - 15% = LEVEL_1
+HACKATHON_MAX_DRAWDOWN_PCT = 30.0  # Hard DQ threshold
 
 # ─── RISK TIERS ───────────────────────────────────────────────────────────
 RISK_TIERS = {
@@ -84,7 +96,7 @@ class MSAF1Engine:
 
     def determine_risk_tier(self, drawdown_pct: float) -> str:
         """3-level drawdown shield as defined in MSAF-1 spec."""
-        if drawdown_pct >= 27.0:
+        if drawdown_pct >= 25.0:
             return "CRITICAL_SHIELD"
         if drawdown_pct >= 22.0:
             return "LEVEL_2"
@@ -105,7 +117,7 @@ class MSAF1Engine:
 
     def should_execute_emergency_exit(self, drawdown_pct: float) -> bool:
         """CRITICAL_SHIELD: Atomic Liquidation Sequence."""
-        return drawdown_pct >= 27.0
+        return drawdown_pct >= 25.0
 
     def execute_emergency_exit(self) -> Dict[str, Any]:
         """
@@ -291,8 +303,9 @@ def run_msaf1_tick(state: dict) -> dict:
         state["last_tick_ts"] = time.time()
         state["heartbeat_last_ts"] = time.time()
 
-        # Execute heartbeat via TWAK            twak = TWAKExecutor(dry_run=os.environ.get("DRY_RUN", "true").lower() == "true")
-            twak_result = twak.execute_swap(
+        # Execute heartbeat via TWAK
+        twak = TWAKExecutor(dry_run=os.environ.get("DRY_RUN", "true").lower() == "true")
+        twak_result = twak.execute_swap(
             from_token="BNB", to_token="USDT",
             amount_usd=state.get("portfolio_usd", 200) * 0.0005,
             gene_name="MSAF1-HEARTBEAT",

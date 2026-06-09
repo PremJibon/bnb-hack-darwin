@@ -1,6 +1,6 @@
 """
 TWAK (Trust Wallet Agent Kit) execution wrapper.
-Handles swap execution and limit orders via TWAK CLI.
+Handles swap execution, limit orders, and competition registration via TWAK CLI.
 """
 
 import json
@@ -9,6 +9,9 @@ import logging
 
 logger = logging.getLogger("darwin.twak")
 
+# BNB HACK 2026 competition contract for on-chain registration
+COMPETITION_CONTRACT = "0x212c61b9b72c95d95bf29cf032f5e5635629aed5"
+
 
 class TWAKExecutor:
     """Execute real trades via TWAK Agent Wallet Mode."""
@@ -16,6 +19,7 @@ class TWAKExecutor:
     def __init__(self, dry_run: bool = True):
         self.dry_run = dry_run
         self.base_cmd = ["twak", "trade"]
+        self.registered = False
         self._check_twak()
 
     def _check_twak(self):
@@ -25,6 +29,57 @@ class TWAKExecutor:
             logger.info(f"TWAK CLI: {result.stdout.strip() or 'installed'}")
         except (FileNotFoundError, subprocess.TimeoutExpired):
             logger.warning("TWAK CLI not found - trades will be logged only")
+
+    def register_for_competition(self) -> dict:
+        """
+        Register agent on-chain for BNB HACK 2026 Track 1.
+        Uses TWAK's 'compete register' command to submit agent wallet address
+        to the competition smart contract.
+        
+        Competition contract: 0x212c61b9b72c95d95bf29cf032f5e5635629aed5
+        CLI: twak compete register
+        MCP: competition_register
+        
+        Must register BEFORE June 22, 2026 (trading window opens).
+        """
+        if self.registered:
+            logger.info("Already registered for competition")
+            return {"status": "already_registered"}
+
+        if self.dry_run:
+            logger.info(f"[DRY-RUN] twak compete register --contract {COMPETITION_CONTRACT}")
+            self.registered = True
+            return {"status": "dry_run", "contract": COMPETITION_CONTRACT}
+
+        try:
+            cmd = ["twak", "compete", "register",
+                   "--contract", COMPETITION_CONTRACT,
+                   "--output", "json"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if proc.returncode == 0:
+                result = json.loads(proc.stdout)
+                self.registered = True
+                logger.info(f"✅ Registered for BNB HACK 2026: {result}")
+                return result
+            else:
+                logger.error(f"Registration failed: {proc.stderr[:200]}")
+                return {"status": "error", "error": proc.stderr[:200]}
+        except Exception as e:
+            logger.error(f"Registration error: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def get_competition_status(self) -> dict:
+        """Check competition registration status."""
+        try:
+            cmd = ["twak", "compete", "status",
+                   "--contract", COMPETITION_CONTRACT,
+                   "--output", "json"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if proc.returncode == 0:
+                return json.loads(proc.stdout)
+            return {"status": "unknown", "error": proc.stderr[:100]}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
 
     def execute_swap(self, from_token: str, to_token: str, amount_usd: float,
                      gene_name: str, reason: str) -> dict:

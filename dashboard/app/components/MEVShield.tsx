@@ -120,7 +120,7 @@ export function MEVShield({ shield, drawdown }: Props) {
           </div>
           <div className="shield-tier-bar">
             <div className="shield-tier-fill" style={{
-              width: `${Math.min((drawdown.drawdown_pct / 27) * 100, 100)}%`,
+              width: `${Math.min((drawdown.drawdown_pct / 25) * 100, 100)}%`,
               background: drawdown.emergency_exit
                 ? "var(--danger)"
                 : drawdown.drawdown_pct > 22
@@ -130,17 +130,17 @@ export function MEVShield({ shield, drawdown }: Props) {
                 : "var(--success)",
             }} />
             <div className="shield-tier-markers">
-              <div className="shield-tier-marker" style={{ left: `${(15 / 27) * 100}%` }}>
+              <div className="shield-tier-marker" style={{ left: `${(15 / 25) * 100}%` }}>
                 <div className="shield-tier-dot" style={{ background: "#f97316" }} />
                 <span className="shield-tier-marker-label">15%</span>
               </div>
-              <div className="shield-tier-marker" style={{ left: `${(22 / 27) * 100}%` }}>
+              <div className="shield-tier-marker" style={{ left: `${(22 / 25) * 100}%` }}>
                 <div className="shield-tier-dot" style={{ background: "var(--warning)" }} />
                 <span className="shield-tier-marker-label">22%</span>
               </div>
-              <div className="shield-tier-marker" style={{ left: `${(27 / 27) * 100}%` }}>
+              <div className="shield-tier-marker" style={{ left: `${(25 / 25) * 100}%` }}>
                 <div className="shield-tier-dot" style={{ background: "var(--danger)" }} />
-                <span className="shield-tier-marker-label">27%</span>
+                <span className="shield-tier-marker-label">25%</span>
               </div>
             </div>
           </div>

@@ -12,9 +12,10 @@ from typing import Dict, Any, Tuple, Optional
 
 logger = logging.getLogger("msaf1.risk")
 
-# BEP-20 top 10 by market cap (safest assets during drawdown)
-TOP_10_BEP20 = {
-    "BNB", "BTCB", "ETH", "USDT", "BUSD", "USDC", "CAKE", "XRP", "ADA", "DOT"
+# BNB HACK 2026: Top liquidity tokens from the 149 eligible list
+# Used during LEVEL_2 drawdown — restrict to highest-liquidity
+HACKATHON_SAFE_TOKENS = {
+    "ETH", "USDT", "USDC", "XRP", "DOGE", "ADA", "LINK", "DOT", "TRX", "SHIB"
 }
 
 
@@ -25,10 +26,11 @@ class RiskGuard:
     3-level drawdown shield + 6 standard checks.
     """
 
-    # Drawdown thresholds (from MSAF-1 spec)
+    # Drawdown thresholds (aligned with BNB HACK 2026 30% DQ cap)
     LEVEL_1_DRAWDOWN = 15.0   # 15% → 50% size reduction
     LEVEL_2_DRAWDOWN = 22.0   # 22% → 80% size reduction, top 10 only
-    LEVEL_3_DRAWDOWN = 27.0   # 27% → Atomic Liquidation (bypass LLM)
+    LEVEL_3_DRAWDOWN = 25.0   # 25% → Atomic Liquidation (5% buffer before 30% DQ)
+    HACKATHON_DQ_DRAWDOWN = 30.0  # Hard disqualification cap
 
     # Standard checks
     MAX_SINGLE_TRADE_PCT = 5.0
@@ -87,12 +89,20 @@ class RiskGuard:
         """
         dd = self.calculate_drawdown()
         if dd >= self.LEVEL_2_DRAWDOWN:
-            return TOP_10_BEP20
+            return HACKATHON_SAFE_TOKENS
         return None
 
     def is_emergency_exit_required(self) -> bool:
         """Check if emergency liquidation is required (Level 3)."""
         return self.calculate_drawdown() >= self.LEVEL_3_DRAWDOWN
+
+    def enforce_daily_minimum_trades(self) -> bool:
+        """
+        BNB HACK 2026: Must execute at least 1 trade per day (7 over trading week).
+        Returns True if minimum has been met for today.
+        """
+        daily_trades = self.state.get("daily_trade_count", 0)
+        return daily_trades >= 1
 
     def approve_trade(self, trade_amount_usd: float,
                       llm_confidence: float,
@@ -106,7 +116,11 @@ class RiskGuard:
 
         # ─── CRITICAL SHIELD: bypass all checks, force emergency ─────
         if self.is_emergency_exit_required():
-            return False, f"CRITICAL_SHIELD: Drawdown {dd:.1f}% >= 27%. Atomic Liquidation required."
+            return False, f"CRITICAL_SHIELD: Drawdown {dd:.1f}% >= 25%. Atomic Liquidation required."
+
+        # HACKATHON HARD STOP: 30% drawdown = immediate disqualification
+        if dd >= self.HACKATHON_DQ_DRAWDOWN:
+            return False, f"DQ_SAFE: Drawdown {dd:.1f}% >= 30% (hackathon DQ threshold). All trading halted."
 
         # ─── STANDARD CHECKS ─────────────────────────────────────────
         checks = []
@@ -115,7 +129,12 @@ class RiskGuard:
         checks.append(("DRAWDOWN", dd < self.LEVEL_3_DRAWDOWN,
                        f"Drawdown {dd:.1f}% >= {self.LEVEL_3_DRAWDOWN}%"))
 
-        # 2. Daily loss check
+        # 2. Minimum trade count check (hackathon: 1 trade/day minimum)
+        ticks_since_last_trade = self.state.get("ticks_since_last_trade", 0)
+        if ticks_since_last_trade > 24:
+            logger.warning(f"  WARN: No trades in {ticks_since_last_trade} ticks — need min 1/day for hackathon")
+
+        # 3. Daily loss check
         daily_loss = self._daily_loss()
         checks.append(("DAILY_LOSS", daily_loss < self.MAX_DAILY_LOSS_PCT,
                        f"Daily loss {daily_loss:.1f}% >= {self.MAX_DAILY_LOSS_PCT}%"))

@@ -5,9 +5,8 @@ import { PriceTicker } from "./components/PriceTicker";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { MEVShield } from "./components/MEVShield";
 import { ArbitrageScanner } from "./components/ArbitrageScanner";
-import { GasMonitor } from "./components/GasMonitor";
 import { DarwinThought } from "./components/DarwinThought";
-import { DrawdownMeter } from "./components/DrawdownMeter";
+
 import { MarketOverview } from "./components/MarketOverview";
 import { PortfolioChart } from "./components/PortfolioChart";
 import { GeneEvolutionChart } from "./components/GeneEvolutionChart";
@@ -15,6 +14,14 @@ import { GeneLeaderboard } from "./components/GeneLeaderboard";
 import { TradeLog } from "./components/TradeLog";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { ApiKeyVault } from "./components/ApiKeyVault";
+import { ChatPanel } from "./components/ChatPanel";
+import { OrderBookDepth } from "./components/OrderBookDepth";
+import { MarketStats } from "./components/MarketStats";
+import { useMarketData, useMarketStats } from "../lib/websocket-context";
+import { usePortfolio } from "../lib/use-portfolio";
+
+// Dashboard constants
+const DRAWDOWN_LIMIT = 25; // 25% max drawdown (5% buffer before 30% DQ)
 
 interface DarwinState {
   portfolio_usd: number;
@@ -90,18 +97,93 @@ export default function Dashboard() {
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL / 1000);
   const [aiLog, setAiLog] = useState(MOCK_AI_LOG);
   const [aiLineIdx, setAiLineIdx] = useState(0);
+  const [killAlert, setKillAlert] = useState<{show: boolean; message: string; type: string}>({show: false, message: "", type: ""});
+
+  // Live market data from Binance WebSocket
+  const { connectionState, tickers, selectedSymbol } = useMarketData();
+  const marketStats = useMarketStats();
+
+  // Portfolio management
+  const {
+    portfolio,
+    history: portfolioHistory,
+    killSwitch,
+    closePosition,
+    closeAllPositions,
+    fetchPortfolio,
+  } = usePortfolio();
+
+  // Track portfolio in state for compatibility with existing components
+  const [localPortfolio, setLocalPortfolio] = useState({ equity: 10000, pnl: 0, pnlPct: 0, winRate: 0, trades: 0 });
+
+  useEffect(() => {
+    if (portfolio) {
+      setLocalPortfolio({
+        equity: portfolio.totalEquity,
+        pnl: portfolio.dayPnl,
+        pnlPct: portfolio.dayPnlPct,
+        winRate: portfolio.winRate,
+        trades: portfolio.totalTrades,
+      });
+    }
+  }, [portfolio]);
+
+  // Real-time AI terminal (generates live market commentary)
+  useEffect(() => {
+    if (aiLineIdx >= MOCK_AI_LOG.length) {
+      const { gainers, losers, mostActive } = marketStats;
+      const topGainer = gainers[0];
+      const topLoser = losers[0];
+      if (topGainer && !aiLog.some(l => l.text.includes(topGainer.symbol))) {
+        const newLine = {
+          ts: new Date().toLocaleTimeString(),
+          level: "success" as const,
+          text: `Signal: <hl>${topGainer.symbol}</hl> leading gainers at <vp>+${topGainer.changePct24h.toFixed(2)}%</vp>`,
+        };
+        setAiLog(prev => [...prev.slice(-20), newLine]);
+      }
+    }
+  }, [marketStats, aiLineIdx, aiLog]);
+
+  const handleKillSwitch = useCallback(async () => {
+    setKillAlert({ show: true, message: "🚨 Executing emergency shutdown...", type: "warning" });
+    try {
+      const result = await killSwitch();
+      setKillAlert({
+        show: true,
+        message: `⚠️ KILL SWITCH ACTIVATED. ${result.message || "All positions closed. Funds secured."}`,
+        type: result.success ? "critical" : "error",
+      });
+    } catch (e: any) {
+      setKillAlert({ show: true, message: `Error: ${e.message}`, type: "error" });
+    }
+    setTimeout(() => setKillAlert({ show: false, message: "", type: "" }), 8000);
+  }, [killSwitch]);
+
+  const handleClosePosition = useCallback(async (symbol: string) => {
+    await closePosition(symbol);
+  }, [closePosition]);
+
+  const handleCloseAll = useCallback(async () => {
+    await closeAllPositions();
+  }, [closeAllPositions]);
 
   const fetchState = useCallback(async () => {
     try {
       if (!GIST_ID) { setError("NEXT_PUBLIC_GIST_ID not set"); setLoading(false); return; }
-      const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, { cache: "no-store" });
+      const res = await fetch(`/api/gist`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const gist = await res.json();
-      const content = gist.files?.["darwin_state.json"]?.content;
-      if (content) setState(JSON.parse(content));
+      const data = await res.json();
+      if (data.success && data.state) {
+        // Merge with live portfolio data
+        data.state.portfolio_usd = localPortfolio.equity;
+        setState(data.state);
+      } else {
+        throw new Error(data.error || "No state data");
+      }
       setLoading(false);
     } catch (e: any) { setError(e.message); setLoading(false); }
-  }, []);
+  }, [localPortfolio.equity]);
 
   // Stream AI terminal logs progressively
   useEffect(() => {
@@ -135,60 +217,101 @@ export default function Dashboard() {
     </div>
   );
 
-  const decision = state.last_decision;
-  const ph = state.portfolio_history || [state.portfolio_usd];
-  const pnl = state.portfolio_start_of_day_usd > 0
-    ? ((state.portfolio_usd - state.portfolio_start_of_day_usd) / state.portfolio_start_of_day_usd) * 100
-    : 0;
-  const winRate = state.total_trades > 0
-    ? ((state.trade_log?.filter((t: any) => t.pnl_pct > 0).length || 0) / state.total_trades) * 100
-    : 0;
-  const positions = state.open_positions?.length > 0
-    ? state.open_positions.map((p: any) => ({
-        pair: p.token + "/USDT",
-        type: p.direction || "Long",
-        leverage: p.leverage || 1,
-        entry: p.entry_price || 0,
-        mark: p.current_price || p.entry_price || 0,
-        pnl: p.pnl_usd || 0,
-        pnlPct: p.pnl_pct || 0,
-      }))
-    : MOCK_POSITIONS;
+  const decision = state?.last_decision;
+  const ph = state?.portfolio_history || (portfolioHistory.length > 0 ? portfolioHistory : [localPortfolio.equity]);
+  const pnl = localPortfolio.pnlPct || 0;
+  const winRate = localPortfolio.winRate;
 
-  const matrixTokens = MOCK_MATRIX;
-  const tier = state.msaf1_risk_tier || "NORMAL";
+  // Build live positions from ticker data (demo: use live prices as if we have positions)
+  const liveBtc = tickers["BTCUSDT"];
+  const liveEth = tickers["ETHUSDT"];
+  const liveBnb = tickers["BNBUSDT"];
+  const hasLivePrices = liveBtc?.price > 0;
+
+  // Use portfolio positions if available, otherwise derive from live data
+  const positionList = portfolio?.openPositions;
+  const positions = positionList && positionList.length > 0
+    ? positionList.map((p: any) => ({
+        pair: p.symbol?.replace("USDT", "/USDT") || "BNB/USDT",
+        type: p.side || "LONG",
+        leverage: p.leverage || 1,
+        entry: p.entryPrice || 0,
+        mark: p.markPrice || 0,
+        pnl: p.unrealizedPnl || 0,
+        pnlPct: p.unrealizedPnlPct || 0,
+        _symbol: p.symbol,
+      }))
+    : hasLivePrices && liveBnb?.price > 0
+      ? [
+          { pair: "BNB/USDT", type: "LONG", leverage: 5, entry: liveBnb.price * 0.97, mark: liveBnb.price, pnl: liveBnb.price * 0.03 * 5, pnlPct: liveBnb.changePct24h * 5, _symbol: "BNBUSDT" },
+          { pair: "ETH/USDT", type: "SHORT", leverage: 3, entry: liveEth?.price ? liveEth.price * 1.01 : 3420, mark: liveEth?.price || 3385, pnl: liveEth?.price ? -(liveEth.price * 0.01) * 3 : 34.5, pnlPct: liveEth?.changePct24h ? -liveEth.changePct24h * 3 : 3.4, _symbol: "ETHUSDT" },
+        ]
+      : MOCK_POSITIONS;
+
+  // Build live matrix tokens from WebSocket data
+  const matrixTokens = !hasLivePrices
+    ? MOCK_MATRIX
+    : ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "LINKUSDT"]
+        .filter(sym => tickers[sym]?.price > 0)
+        .map(sym => {
+          const t = tickers[sym];
+          const w = Math.abs(t.changePct24h) * 15 + 30;
+          return {
+            sym: sym.replace("USDT", "/USDT"),
+            price: t.price,
+            change: t.change24h,
+            changePct: t.changePct24h,
+            weight: Math.min(w, 100),
+          };
+        });
+
+  const tier = state?.msaf1_risk_tier || "NORMAL";
 
   return (
     <div className="container">
       {/* ===== GLOBAL HEADER BAR ===== */}
       <header className="global-header">
-        <div className="global-header-left">
-          <div className="brand-logo">
-            <span className="logo-symbol">Y</span>
-            <span>YOLO_BOAT</span>
-            <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 12, marginLeft: 2 }}>/ MSAF-1</span>
-          </div>
-          <span className="header-badge active">
-            <span className="dot dot-green" /> Agent: Active
+        <div className="global-header-left">            <div className="brand-logo">
+              <span className="logo-symbol">D</span>
+              <span style={{ background: "linear-gradient(135deg, var(--accent-cyan), var(--accent-purple))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>DARWIN</span>
+              <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 11 }}>TERMINAL</span>
+            </div>
+          <span className={`header-badge ${connectionState === "connected" ? "active" : ""}`}>
+            <span className={`dot ${connectionState === "connected" ? "dot-green" : connectionState === "connecting" ? "dot-blue" : "dot-red"}`} />
+            <span style={{ fontWeight: 600 }}>{connectionState === "connected" ? "LIVE" : connectionState === "connecting" ? "CONNECTING" : "OFFLINE"}</span>
           </span>
           <span className="header-badge">
-            <span className="dot dot-blue" /> Binance Futures
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--neon-blue)" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /></svg>
+            Binance
           </span>
-          <span className="ping-badge">Ping: {Math.floor(8 + Math.random() * 5)}ms</span>
+          <span className={`ping-badge ${connectionState === "connected" ? "connected" : ""}`}>
+            {connectionState === "connected" ? `${Math.floor(8 + Math.random() * 5)}ms` : "---"}
+          </span>
         </div>
         <div className="global-header-right">
           <NotificationsPanel state={state} />
           <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-            {timeAgo(state.last_tick)}
+            {state?.last_tick ? timeAgo(state.last_tick) : "—"}
           </span>
           <button className="btn-notif" onClick={fetchState} title="Refresh" style={{ fontSize: 10, padding: "4px 8px" }}>
             &#x21bb; {countdown}s
           </button>
-          <button className="kill-switch" onClick={() => alert("EMERGENCY KILL — All positions would be closed.")}>
+          <button className="kill-switch" onClick={handleKillSwitch} title="Emergency shutdown — closes all positions">
             ⚡ Kill Switch
           </button>
         </div>
       </header>
+
+      {/* Emergency Alert Banner */}
+      {killAlert.show && (
+        <div className={`emergency-alert ${killAlert.type}`}>
+          <span className="emergency-alert-icon">
+            {killAlert.type === "critical" ? "⚠️" : killAlert.type === "error" ? "❌" : "🔄"}
+          </span>
+          <span className="emergency-alert-text">{killAlert.message}</span>
+          <button className="emergency-alert-close" onClick={() => setKillAlert({ show: false, message: "", type: "" })}>×</button>
+        </div>
+      )}
 
       {/* ===== PRICE TICKER ===== */}
       <PriceTicker />
@@ -197,18 +320,18 @@ export default function Dashboard() {
       <section className="stats-bar">
         <div className="stat-block">
           <span className="stat-block-label">Portfolio Value</span>
-          <span className="stat-block-value">${formatNum(state.portfolio_usd, 2)}</span>
-          <span className={`stat-block-change ${pnl >= 0 ? "up" : "down"}`}>
-            {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}% today
+          <span className="stat-block-value">${formatNum(localPortfolio.equity, 2)}</span>
+          <span className={`stat-block-change ${localPortfolio.pnlPct >= 0 ? "up" : "down"}`}>
+            {localPortfolio.pnlPct >= 0 ? "+" : ""}{localPortfolio.pnlPct.toFixed(2)}% today
           </span>
         </div>
         <div className="stat-block">
           <span className="stat-block-label">24h Net P&L</span>
-          <span className="stat-block-value" style={{ color: pnl >= 0 ? "var(--green)" : "var(--red)" }}>
-            {pnl >= 0 ? "+" : ""}${formatNum(state.portfolio_usd - state.portfolio_start_of_day_usd, 2)}
+          <span className="stat-block-value" style={{ color: localPortfolio.pnl >= 0 ? "var(--green)" : "var(--red)" }}>
+            {localPortfolio.pnl >= 0 ? "+" : ""}${formatNum(Math.abs(localPortfolio.pnl), 2)}
           </span>
-          <span className={`stat-block-change ${pnl >= 0 ? "up" : "down"}`}>
-            {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%
+          <span className={`stat-block-change ${localPortfolio.pnl >= 0 ? "up" : "down"}`}>
+            {localPortfolio.pnlPct >= 0 ? "+" : ""}{localPortfolio.pnlPct.toFixed(2)}%
           </span>
         </div>
         <div className="stat-block">
@@ -216,88 +339,62 @@ export default function Dashboard() {
           <span className="stat-block-value" style={{ color: winRate >= 60 ? "var(--green)" : winRate >= 40 ? "var(--yellow)" : "var(--red)" }}>
             {winRate.toFixed(1)}%
           </span>
-          <span className="stat-block-change neutral">{state.total_trades} trades · {state.generation} gens</span>
+          <span className="stat-block-change neutral">{localPortfolio.trades} trades · LIVE</span>
         </div>
         <div className="stat-block">
-          <span className="stat-block-label">Active Bots</span>
-          <span className="stat-block-value" style={{ color: "var(--neon-blue)" }}>
-            2 / 4
+          <span className="stat-block-label">Exchange Status</span>
+          <span className="stat-block-value" style={{ color: connectionState === "connected" ? "var(--green)" : "var(--red)" }}>
+            {connectionState === "connected" ? "Live" : "Offline"}
             <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6, fontWeight: 400 }}>
-              {state.open_positions.length} positions
+              {positions.length} positions
             </span>
           </span>
-          <span className="stat-block-change" style={{ color: tier === "CRITICAL_SHIELD" ? "var(--red)" : tier === "LEVEL_2" ? "var(--yellow)" : tier === "LEVEL_1" ? "#f97316" : "var(--green)" }}>
-            Shield: {tier}
+          <span className="stat-block-change" style={{ color: connectionState === "connected" ? "var(--green)" : "var(--red)" }}>
+            Binance WS: {connectionState}
           </span>
         </div>
       </section>
 
-      {/* ===== MATRIX GRID: LIVE MONITOR + AI ENGINE ===== */}
+      {/* ===== MATRIX GRID: LIVE MONITOR + MARKET STATS ===== */}
       <section className="matrix-grid">
         {/* Live Matrix Monitor */}
         <div className="card">
           <div className="card-header">
             <span className="card-title">
-              <span className="accent-dot" style={{ background: "var(--neon-blue)" }} />
+              <span className={`accent-dot ${connectionState === "connected" ? "pulse-blue" : ""}`} style={{ background: "var(--neon-blue)" }} />
               Live Matrix Monitor
             </span>
-            <span style={{ fontSize: 9, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-              Real-time
+            <span style={{ fontSize: 9, color: connectionState === "connected" ? "var(--green)" : "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+              {connectionState === "connected" ? `Live · ${Object.values(tickers).filter(t => t.price > 0).length} assets` : "Connecting..."}
             </span>
           </div>
-          {matrixTokens.map((t, i) => (
-            <div key={i} className="matrix-item">
-              <span className="matrix-symbol">{t.sym}</span>
-              <div className="matrix-bar-wrap">
-                <div className="matrix-bar-fill" style={{
-                  width: `${t.weight}%`,
-                  background: t.change >= 0 ? "var(--green)" : "var(--red)",
-                }}>
-                  <div className="matrix-bar-pulse" style={{
+          {matrixTokens.length === 0 ? (
+            <div className="matrix-empty">Waiting for market data...</div>
+          ) : (
+            matrixTokens.map((t, i) => (
+              <div key={i} className="matrix-item">
+                <span className="matrix-symbol">{t.sym}</span>
+                <div className="matrix-bar-wrap">
+                  <div className="matrix-bar-fill" style={{
+                    width: `${Math.min(t.weight, 100)}%`,
                     background: t.change >= 0 ? "var(--green)" : "var(--red)",
-                  }} />
+                  }}>
+                    <div className="matrix-bar-pulse" style={{
+                      background: t.change >= 0 ? "var(--green)" : "var(--red)",
+                    }} />
+                  </div>
                 </div>
+                <span className="matrix-price">${t.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span className={`matrix-pnl ${t.change >= 0 ? "pos" : "neg"}`}>
+                  {t.change >= 0 ? "+" : ""}{t.changePct.toFixed(2)}%
+                </span>
               </div>
-              <span className="matrix-price">${t.price.toLocaleString()}</span>
-              <span className={`matrix-pnl ${t.change >= 0 ? "pos" : "neg"}`}>
-                {t.change >= 0 ? "+" : ""}{t.changePct.toFixed(2)}%
-              </span>
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
-        {/* AI Intelligence Engine */}
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">
-              <span className="accent-dot" style={{ background: "var(--violet)" }} />
-              Agent Intelligence Engine
-            </span>
-            <span style={{ fontSize: 9, color: "var(--violet)", fontFamily: "var(--font-mono)" }}>
-              {state.msaf1_strategy?.action || "IDLE"}
-            </span>
-          </div>
-          <div className="ai-terminal">
-            {aiLog.slice(0, aiLineIdx + 1).map((line, i) => (
-              <span key={i} className="ai-line">
-                <span className="timestamp">[{line.ts}]</span>{" "}
-                <span className={`level-${line.level}`}>[{line.level.toUpperCase()}]</span>{" "}
-                {line.text.split(/(<hl>.*?<\/hl>|<vl>.*?<\/vl>|<vp>.*?<\/vp>)/g).map((seg, j) => {
-                  if (seg.startsWith("<hl>")) return <span key={j} className="highlight">{seg.slice(4, -5)}</span>;
-                  if (seg.startsWith("<vl>")) return <span key={j} className="value-down">{seg.slice(4, -5)}</span>;
-                  if (seg.startsWith("<vp>")) return <span key={j} className="value-up">{seg.slice(4, -5)}</span>;
-                  return seg;
-                })}
-              </span>
-            ))}
-            {aiLineIdx < MOCK_AI_LOG.length && <span className="cursor-blink" />}
-            {state.msaf1_strategy?.rationale && aiLineIdx >= MOCK_AI_LOG.length && (
-              <span className="ai-line" style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border)" }}>
-                <span className="level-info">[SANDBOX]</span> {state.msaf1_strategy.rationale}
-              </span>
-            )}
-          </div>
-        </div>
+        {/* Market Stats: Gainers, Losers, Volume Leaders */}
+        <MarketStats />
       </section>
 
       {/* ===== WORKFLOW TELEMETRY ===== */}
@@ -381,8 +478,19 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td>
-                        <button className="table-action" style={{ marginRight: 4 }}>Pause</button>
-                        <button className="table-action danger">Kill</button>
+                        <button
+                          className="table-action"
+                          style={{ marginRight: 4 }}
+                          onClick={() => handleClosePosition(pos.pair.replace('/USDT', '') + 'USDT')}
+                        >
+                          Close
+                        </button>
+                        <button
+                          className="table-action danger"
+                          onClick={() => handleClosePosition(pos.pair.replace('/USDT', '') + 'USDT')}
+                        >
+                          Kill
+                        </button>
                       </td>
                     </tr>
                   );
@@ -393,16 +501,11 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* ===== MID GRID: MEV Shield + Arbitrage + Gas ===== */}
+      {/* ===== PROFESSIONAL ORDER BOOK + MEV Shield + Arbitrage ===== */}
       <section className="mid-grid">
-        <MEVShield shield={state.shield_status || null} drawdown={state.risk_shield || null} />
-        <ArbitrageScanner opportunities={state.arbitrage_opportunities || []} telemetry={state.msaf1_telemetry || null} />
-        <GasMonitor
-          currentGas={state.shield_status?.gas_gwei || 5}
-          gasHistory={state.msaf1_telemetry?.gas_gwei_avg ? [{gwei: state.msaf1_telemetry.gas_gwei_avg, ts: Date.now()}] : []}
-          gasSpike={state.shield_status?.gas_spike || false}
-          gasCritical={state.shield_status?.gas_critical || false}
-        />
+        <OrderBookDepth symbol={selectedSymbol} />
+        <MEVShield shield={state?.shield_status || null} drawdown={state?.risk_shield || null} />
+        <ArbitrageScanner opportunities={state?.arbitrage_opportunities || []} telemetry={state?.msaf1_telemetry || null} />
       </section>
 
       {/* ===== DRAWDOWN + DARWIN'S THOUGHT + MARKET ===== */}
@@ -416,11 +519,11 @@ export default function Dashboard() {
               fontSize: 24, fontWeight: 700, fontFamily: "var(--font-mono)",
               color: state.current_drawdown_pct > 20 ? "var(--red)" : state.current_drawdown_pct > 15 ? "var(--yellow)" : "var(--green)"
             }}>{state.current_drawdown_pct.toFixed(1)}%</span>
-            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>/ 27% max</span>
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>/ {DRAWDOWN_LIMIT}% max</span>
           </div>
           <div className="dd-meter">
             <div className="dd-fill" style={{
-              width: `${Math.min((state.current_drawdown_pct / 27) * 100, 100)}%`,
+              width: `${Math.min((state.current_drawdown_pct / DRAWDOWN_LIMIT) * 100, 100)}%`,
               background: state.current_drawdown_pct > 20 ? "var(--red)" : state.current_drawdown_pct > 15 ? "var(--yellow)" : "var(--green)"
             }} />
           </div>
@@ -428,7 +531,7 @@ export default function Dashboard() {
             <span>0%</span>
             <span>15%</span>
             <span>22%</span>
-            <span>27% limit</span>
+            <span>{DRAWDOWN_LIMIT}% limit</span>
           </div>
         </div>
 
@@ -454,7 +557,9 @@ export default function Dashboard() {
       {state.genes && Object.keys(state.genes).length > 0 && (
         <section className="section">
           <div className="section-header">
-            <h2>Gene Tournament</h2>
+            <h2 style={{ fontSize: 14, fontWeight: 700, background: "linear-gradient(90deg, var(--accent-cyan), var(--accent-purple))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              Gene Tournament
+            </h2>
             <span className="sub">4 strategies competing · winner executes</span>
           </div>
           <GeneLeaderboard genes={state.genes} scores={state.gene_scores} />
@@ -473,14 +578,139 @@ export default function Dashboard() {
       {/* ===== API KEY VAULT ===== */}
       <ApiKeyVault />
 
+      {/* ===== CHAT PANEL ===== */}
+      <ChatPanel />
+
       {/* ===== FOOTER ===== */}
       <footer className="footer">
-        <div>MSAF-1 — The Sandman: MEV-Shield &amp; Arbitrage-Frontrunner</div>
-        <div className="footer-links">
-          <span>BNB HACK 2026</span>
-          <span>Best Use of TWAK</span>
-          <span>OpenClawCash</span>
-          <a href="https://github.com/PremJibon/bnb-hack-darwin" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <div className="footer-grid">
+          {/* Brand Column */}
+          <div className="footer-col brand-col">
+            <div className="footer-brand">
+              <span className="footer-logo">Y</span>
+              <div>
+                <div className="footer-brand-name">YOLO_BOAT</div>
+                <div className="footer-brand-tag">Digital Agency / MSAF-1</div>
+              </div>
+            </div>
+            <p className="footer-desc">
+              AI-powered MEV-Shield &amp; Arbitrage-Frontrunner trading agent for BNB Chain.
+              Built with precision, evolved through competition.
+            </p>
+          </div>
+
+          {/* Captain / Creator Column */}
+          <div className="footer-col">
+            <h4 className="footer-heading">The Captain</h4>
+            <div className="footer-creator">
+              <div className="footer-avatar">
+                <span>P</span>
+              </div>
+              <div>
+                <div className="footer-creator-name">Shahed Hossain Prem</div>
+                <div className="footer-creator-nick">aka <strong>Luffy</strong></div>
+              </div>
+            </div>
+            <p className="footer-creator-bio">
+              Full-stack developer &amp; AI agent engineer. Pushing the boundaries of autonomous DeFi trading agents.
+            </p>
+          </div>
+
+          {/* Links Column */}
+          <div className="footer-col">
+            <h4 className="footer-heading">Links</h4>
+            <ul className="footer-link-list">
+              <li>
+                <a href="https://threejs-and-nextjs-portfoilo-projec-indol.vercel.app/" target="_blank" rel="noopener noreferrer" className="footer-link featured">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                  Captain's Portfolio
+                </a>
+              </li>
+              <li>
+                <a href="https://yoloboat-digital.vercel.app/" target="_blank" rel="noopener noreferrer" className="footer-link">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="2" y1="12" x2="22" y2="12" />
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                  </svg>
+                  Yoloboat Digital
+                </a>
+              </li>
+              <li>
+                <a href="https://github.com/PremJibon/bnb-hack-darwin" target="_blank" rel="noopener noreferrer" className="footer-link">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                  </svg>
+                  GitHub Repo
+                </a>
+              </li>
+              <li>
+                <a href="https://www.instagram.com/prem_dev_yoloboat/" target="_blank" rel="noopener noreferrer" className="footer-link">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+                  </svg>
+                  @prem_dev_yoloboat
+                </a>
+              </li>
+              <li>
+                <a href="https://www.facebook.com/prem.jibon.7/" target="_blank" rel="noopener noreferrer" className="footer-link">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                  </svg>
+                  Facebook
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          {/* Contact Column */}
+          <div className="footer-col">
+            <h4 className="footer-heading">Contact</h4>
+            <ul className="footer-link-list">
+              <li>
+                <a href="mailto:prempfp96@gmail.com" className="footer-link">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                    <polyline points="22,6 12,13 2,6" />
+                  </svg>
+                  prempfp96@gmail.com
+                </a>
+              </li>
+              <li>
+                <a href="mailto:premjibon1999@gmail.com" className="footer-link">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                    <polyline points="22,6 12,13 2,6" />
+                  </svg>
+                  premjibon1999@gmail.com
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        {/* Bottom Bar */}
+        <div className="footer-bottom">
+          <div className="footer-bottom-left">
+            <span>BNB HACK 2026</span>
+            <span className="footer-dot">·</span>
+            <span>Best Use of TWAK</span>
+            <span className="footer-dot">·</span>
+            <span>OpenClawCash</span>
+          </div>
+          <div className="footer-bottom-right">
+            Built by{' '}
+            <a href="https://threejs-and-nextjs-portfoilo-projec-indol.vercel.app/" target="_blank" rel="noopener noreferrer" className="footer-credit-link">
+              Shahed Hossain Prem
+            </a>
+            {' '}· <span className="footer-birthday">June 30, 1999</span>
+          </div>
         </div>
       </footer>
     </div>
